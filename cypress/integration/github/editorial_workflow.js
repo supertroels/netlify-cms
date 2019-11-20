@@ -19,25 +19,27 @@ import {
 } from '../../utils/steps';
 import { workflowStatus, editorStatus } from '../../utils/constants';
 import { entry1, entry2, entry3 } from './entries';
-import * as specUtils from './spec_utils';
+import * as specUtils from '../utils/spec_utils';
+
+const backend = 'github';
 
 export default function({ use_graphql }) {
   let taskResult = { data: {} };
 
   before(() => {
-    specUtils.before(taskResult, { use_graphql, open_authoring: false });
+    specUtils.before(backend, taskResult, { use_graphql, open_authoring: false });
   });
 
   after(() => {
-    specUtils.after(taskResult);
+    specUtils.after(backend, taskResult);
   });
 
   beforeEach(() => {
-    specUtils.beforeEach(taskResult);
+    specUtils.beforeEach(backend, taskResult);
   });
 
   afterEach(() => {
-    specUtils.afterEach(taskResult);
+    specUtils.afterEach(backend, taskResult);
   });
 
   it('successfully loads', () => {

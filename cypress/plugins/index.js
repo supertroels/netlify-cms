@@ -12,6 +12,7 @@
 // the project's config changing)
 require('dotenv').config();
 const { setupGitHub, teardownGitHub, setupGitHubTest, teardownGitHubTest } = require('./github');
+const { setupGitLab, teardownGitLab, setupGitLabTest, teardownGitLabTest } = require('./gitlab');
 const { copyBackendFiles } = require('../utils/config');
 
 module.exports = async on => {
@@ -22,8 +23,13 @@ module.exports = async on => {
       await copyBackendFiles(backend);
 
       let result = null;
-      if (backend === 'github') {
-        result = await setupGitHub(options);
+      switch (backend) {
+        case 'github':
+          result = await setupGitHub(options);
+          break;
+        case 'gitlab':
+          result = await setupGitLab(options);
+          break;
       }
 
       return result;
@@ -32,8 +38,13 @@ module.exports = async on => {
       const { backend } = taskData;
       console.log('Tearing down backend', backend);
 
-      if (backend === 'github') {
-        await teardownGitHub(taskData);
+      switch (backend) {
+        case 'github':
+          await teardownGitHub(taskData);
+          break;
+        case 'gitlab':
+          await teardownGitLab(taskData);
+          break;
       }
 
       console.log('Restoring defaults');
@@ -45,8 +56,13 @@ module.exports = async on => {
       const { backend, testName } = taskData;
       console.log(`Setting up single test '${testName}' for backend`, backend);
 
-      if (backend === 'github') {
-        await setupGitHubTest(taskData);
+      switch (backend) {
+        case 'github':
+          await setupGitHubTest(taskData);
+          break;
+        case 'gitlab':
+          await setupGitLabTest(taskData);
+          break;
       }
 
       return null;
@@ -56,8 +72,13 @@ module.exports = async on => {
 
       console.log(`Tearing down single test '${testName}' for backend`, backend);
 
-      if (backend === 'github') {
-        await teardownGitHubTest(taskData);
+      switch (backend) {
+        case 'github':
+          await teardownGitHubTest(taskData);
+          break;
+        case 'gitlab':
+          await teardownGitLabTest(taskData);
+          break;
       }
 
       return null;

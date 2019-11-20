@@ -1,6 +1,4 @@
-const backend = 'github';
-
-export const before = (taskResult, options) => {
+export const before = (backend, taskResult, options) => {
   Cypress.config('taskTimeout', 5 * 60 * 1000);
   cy.task('setupBackend', { backend, options }).then(data => {
     taskResult.data = data;
@@ -8,14 +6,14 @@ export const before = (taskResult, options) => {
   });
 };
 
-export const after = taskResult => {
+export const after = (backend, taskResult) => {
   cy.task('teardownBackend', {
     backend,
     ...taskResult.data,
   });
 };
 
-export const beforeEach = taskResult => {
+export const beforeEach = (backend, taskResult) => {
   const spec = Cypress.mocha.getRunner().suite.ctx.currentTest.parent.title;
   const testName = Cypress.mocha.getRunner().suite.ctx.currentTest.title;
   cy.task('setupBackendTest', {
@@ -34,7 +32,7 @@ export const beforeEach = taskResult => {
   return cy.clock(0, ['Date']);
 };
 
-export const afterEach = taskResult => {
+export const afterEach = (backend, taskResult) => {
   const spec = Cypress.mocha.getRunner().suite.ctx.currentTest.parent.title;
   const testName = Cypress.mocha.getRunner().suite.ctx.currentTest.title;
 

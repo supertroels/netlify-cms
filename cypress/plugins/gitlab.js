@@ -10,24 +10,15 @@ const { retrieveRecordedExpectations, resetMockServerState } = require('../utils
 const GIT_SSH_COMMAND = 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no';
 const GIT_SSL_NO_VERIFY = true;
 
-const GITHUB_REPO_OWNER_SANITIZED_VALUE = 'owner';
-const GITHUB_REPO_NAME_SANITIZED_VALUE = 'repo';
-const GITHUB_REPO_TOKEN_SANITIZED_VALUE = 'fakeToken';
-const GITHUB_OPEN_AUTHORING_OWNER_SANITIZED_VALUE = 'forkOwner';
-const GITHUB_OPEN_AUTHORING_TOKEN_SANITIZED_VALUE = 'fakeForkToken';
+const GITLAB_REPO_OWNER_SANITIZED_VALUE = 'owner';
+const GITLAB_REPO_NAME_SANITIZED_VALUE = 'repo';
+const GITLAB_REPO_TOKEN_SANITIZED_VALUE = 'fakeToken';
 
 const FAKE_OWNER_USER = {
   login: 'owner',
   id: 1,
   avatar_url: 'https://avatars1.githubusercontent.com/u/7892489?v=4',
   name: 'owner',
-};
-
-const FAKE_FORK_OWNER_USER = {
-  login: 'forkOwner',
-  id: 2,
-  avatar_url: 'https://avatars1.githubusercontent.com/u/9919?s=200&v=4',
-  name: 'forkOwner',
 };
 
 function getGitHubClient(token) {
@@ -40,21 +31,19 @@ function getGitHubClient(token) {
 
 function getEnvs() {
   const {
-    GITHUB_REPO_OWNER: owner,
-    GITHUB_REPO_NAME: repo,
-    GITHUB_REPO_TOKEN: token,
-    GITHUB_OPEN_AUTHORING_OWNER: forkOwner,
-    GITHUB_OPEN_AUTHORING_TOKEN: forkToken,
+    GITLAB_REPO_OWNER: owner,
+    GITLAB_REPO_NAME: repo,
+    GITLAB_REPO_TOKEN: token,
   } = process.env;
-  if (!owner || !repo || !token || !forkOwner || !forkToken) {
+  if (!owner || !repo || !token) {
     throw new Error(
-      'Please set GITHUB_REPO_OWNER, GITHUB_REPO_NAME, GITHUB_REPO_TOKEN, GITHUB_OPEN_AUTHORING_OWNER, GITHUB_OPEN_AUTHORING_TOKEN  environment variables',
+      'Please set GITLAB_REPO_OWNER, GITLAB_REPO_NAME, GITLAB_REPO_TOKEN environment variables',
     );
   }
-  return { owner, repo, token, forkOwner, forkToken };
+  return { owner, repo, token };
 }
 
-async function prepareTestGitHubRepo() {
+async function prepareTestGitLabRepo() {
   const { owner, repo, token } = getEnvs();
 
   // postfix a random string to avoid collisions
@@ -103,13 +92,8 @@ async function getUser() {
   return getAuthenticatedUser(token);
 }
 
-async function getForkUser() {
-  const { forkToken } = getEnvs();
-  return getAuthenticatedUser(forkToken);
-}
-
 async function deleteRepositories({ owner, repo, tempDir }) {
-  const { forkOwner, token, forkToken } = getEnvs();
+  const { token } = getEnvs();
 
   const errorHandler = e => {
     if (e.status !== 404) {
@@ -124,15 +108,6 @@ async function deleteRepositories({ owner, repo, tempDir }) {
   await client.repos
     .delete({
       owner,
-      repo,
-    })
-    .catch(errorHandler);
-
-  console.log('Deleting forked repository', `${forkOwner}/${repo}`);
-  client = getGitHubClient(forkToken);
-  await client.repos
-    .delete({
-      owner: forkOwner,
       repo,
     })
     .catch(errorHandler);
@@ -180,56 +155,23 @@ async function resetOriginRepo({ owner, repo, tempDir }) {
   console.log('Done resetting origin repo:', `${owner}/repo`);
 }
 
-async function resetForkedRepo({ repo }) {
-  const { forkToken, forkOwner } = getEnvs();
-  const client = getGitHubClient(forkToken);
-
-  const { data: repos } = await client.repos.list();
-  if (repos.some(r => r.name === repo)) {
-    console.log('Resetting forked repo:', `${forkOwner}/${repo}`);
-    const { data: branches } = await client.repos.listBranches({ owner: forkOwner, repo });
-    const refs = branches.filter(b => b.name !== 'master').map(b => `heads/${b.name}`);
-
-    console.log('Deleting refs', refs);
-    await Promise.all(
-      refs.map(ref =>
-        client.git.deleteRef({
-          owner: forkOwner,
-          repo,
-          ref,
-        }),
-      ),
-    );
-    console.log('Done resetting forked repo:', `${forkOwner}/repo`);
-  }
-}
-
 async function resetRepositories({ owner, repo, tempDir }) {
   await resetOriginRepo({ owner, repo, tempDir });
-  await resetForkedRepo({ repo });
 }
 
-async function setupGitHub(options) {
+async function setupGitLab(options) {
   if (process.env.RECORD_FIXTURES) {
     console.log('Running tests in "record" mode - live data with be used!');
-    const [user, forkUser, repoData] = await Promise.all([
-      getUser(),
-      getForkUser(),
-      prepareTestGitHubRepo(),
-    ]);
-
-    const { use_graphql = false, open_authoring = false } = options;
+    const [user, repoData] = await Promise.all([getUser(), prepareTestGitLabRepo()]);
 
     await updateConfig(config => {
       config.backend = {
         ...config.backend,
-        use_graphql,
-        open_authoring,
         repo: `${repoData.owner}/${repoData.repo}`,
       };
     });
 
-    return { ...repoData, user, forkUser, mockResponses: false };
+    return { ...repoData, user, mockResponses: false };
   } else {
     console.log('Running tests in "playback" mode - local data with be used');
 
@@ -237,25 +179,21 @@ async function setupGitHub(options) {
       config.backend = {
         ...config.backend,
         ...options,
-        repo: `${GITHUB_REPO_OWNER_SANITIZED_VALUE}/${GITHUB_REPO_NAME_SANITIZED_VALUE}`,
+        repo: `${GITLAB_REPO_OWNER_SANITIZED_VALUE}/${GITLAB_REPO_NAME_SANITIZED_VALUE}`,
       };
     });
 
     return {
-      owner: GITHUB_REPO_OWNER_SANITIZED_VALUE,
-      repo: GITHUB_REPO_NAME_SANITIZED_VALUE,
-      user: { ...FAKE_OWNER_USER, token: GITHUB_REPO_TOKEN_SANITIZED_VALUE, backendName: 'github' },
-      forkUser: {
-        ...FAKE_FORK_OWNER_USER,
-        token: GITHUB_OPEN_AUTHORING_TOKEN_SANITIZED_VALUE,
-        backendName: 'github',
-      },
+      owner: GITLAB_REPO_OWNER_SANITIZED_VALUE,
+      repo: GITLAB_REPO_NAME_SANITIZED_VALUE,
+      user: { ...FAKE_OWNER_USER, token: GITLAB_REPO_TOKEN_SANITIZED_VALUE, backendName: 'gitlab' },
+
       mockResponses: true,
     };
   }
 }
 
-async function teardownGitHub(taskData) {
+async function teardownGitLab(taskData) {
   if (process.env.RECORD_FIXTURES) {
     await deleteRepositories(taskData);
   }
@@ -263,7 +201,7 @@ async function teardownGitHub(taskData) {
   return null;
 }
 
-async function setupGitHubTest(taskData) {
+async function setupGitLabTest(taskData) {
   if (process.env.RECORD_FIXTURES) {
     await resetRepositories(taskData);
     await resetMockServerState();
@@ -272,27 +210,15 @@ async function setupGitHubTest(taskData) {
   return null;
 }
 
-const sanitizeString = (
-  str,
-  { owner, repo, token, forkOwner, forkToken, ownerName, forkOwnerName },
-) => {
+const sanitizeString = (str, { owner, repo, token, ownerName }) => {
   let replaced = str
-    .replace(new RegExp(escapeRegExp(forkOwner), 'g'), GITHUB_OPEN_AUTHORING_OWNER_SANITIZED_VALUE)
-    .replace(new RegExp(escapeRegExp(forkToken), 'g'), GITHUB_OPEN_AUTHORING_TOKEN_SANITIZED_VALUE)
-    .replace(new RegExp(escapeRegExp(owner), 'g'), GITHUB_REPO_OWNER_SANITIZED_VALUE)
-    .replace(new RegExp(escapeRegExp(repo), 'g'), GITHUB_REPO_NAME_SANITIZED_VALUE)
-    .replace(new RegExp(escapeRegExp(token), 'g'), GITHUB_REPO_TOKEN_SANITIZED_VALUE)
+    .replace(new RegExp(escapeRegExp(owner), 'g'), GITLAB_REPO_OWNER_SANITIZED_VALUE)
+    .replace(new RegExp(escapeRegExp(repo), 'g'), GITLAB_REPO_NAME_SANITIZED_VALUE)
+    .replace(new RegExp(escapeRegExp(token), 'g'), GITLAB_REPO_TOKEN_SANITIZED_VALUE)
     .replace(new RegExp('https://avatars.+?/u/.+?v=\\d', 'g'), `${FAKE_OWNER_USER.avatar_url}`);
 
   if (ownerName) {
     replaced = replaced.replace(new RegExp(escapeRegExp(ownerName), 'g'), FAKE_OWNER_USER.name);
-  }
-
-  if (forkOwnerName) {
-    replaced = replaced.replace(
-      new RegExp(escapeRegExp(forkOwnerName), 'g'),
-      FAKE_FORK_OWNER_USER.name,
-    );
   }
 
   return replaced;
@@ -329,12 +255,7 @@ const transformRecordedData = (expectation, toSanitize) => {
       httpRequest.path === '/user' &&
       httpRequest.headers.Host.includes('api.github.com')
     ) {
-      const parsed = JSON.parse(responseBody);
-      if (parsed.login === toSanitize.forkOwner) {
-        responseBody = JSON.stringify(FAKE_FORK_OWNER_USER);
-      } else {
-        responseBody = JSON.stringify(FAKE_OWNER_USER);
-      }
+      responseBody = JSON.stringify(FAKE_OWNER_USER);
     }
     return responseBody;
   };
@@ -348,7 +269,7 @@ const transformRecordedData = (expectation, toSanitize) => {
   return cypressRouteOptions;
 };
 
-async function teardownGitHubTest(taskData) {
+async function teardownGitLabTest(taskData) {
   if (process.env.RECORD_FIXTURES) {
     await resetRepositories(taskData);
 
@@ -389,8 +310,8 @@ async function teardownGitHubTest(taskData) {
 }
 
 module.exports = {
-  setupGitHub,
-  teardownGitHub,
-  setupGitHubTest,
-  teardownGitHubTest,
+  setupGitLab,
+  teardownGitLab,
+  setupGitLabTest,
+  teardownGitLabTest,
 };
