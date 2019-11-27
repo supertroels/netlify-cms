@@ -25,7 +25,7 @@ const retrieveRecordedExpectations = async () => {
   recorded = recorded.filter(({ httpRequest }) => {
     const { Host = [] } = httpRequest.headers;
 
-    return Host.includes('api.github.com');
+    return Host.includes('api.github.com') || Host.includes('gitlab.com');
   });
 
   return recorded;

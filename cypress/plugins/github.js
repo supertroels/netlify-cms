@@ -139,7 +139,7 @@ async function deleteRepositories({ owner, repo, tempDir }) {
 }
 
 async function resetOriginRepo({ owner, repo, tempDir }) {
-  console.log('Resetting origin repo:', `${owner}/repo`);
+  console.log('Resetting origin repo:', `${owner}/${repo}`);
   const { token } = getEnvs();
   const client = getGitHubClient(token);
 

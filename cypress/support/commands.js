@@ -62,9 +62,9 @@ const stubFetch = (win, routes) => {
         ok: route.status >= 200 && route.status <= 299,
       };
       return Promise.resolve(response);
-    } else if (args[0].includes('api.github.com')) {
+    } else if (args[0].includes('api.github.com') || args[0].includes('api.gitlab.com')) {
       console.warn(
-        `No route match for github api request. Fetch args: ${JSON.stringify(args)}. Returning 404`,
+        `No route match for api request. Fetch args: ${JSON.stringify(args)}. Returning 404`,
       );
       const response = {
         status: 404,

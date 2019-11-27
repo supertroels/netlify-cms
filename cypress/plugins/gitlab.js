@@ -1,4 +1,4 @@
-const Octokit = require('@octokit/rest');
+const { Gitlab } = require('gitlab');
 const fs = require('fs-extra');
 const path = require('path');
 const simpleGit = require('simple-git/promise');
@@ -21,11 +21,11 @@ const FAKE_OWNER_USER = {
   name: 'owner',
 };
 
-function getGitHubClient(token) {
-  const client = new Octokit({
-    auth: `token ${token}`,
-    baseUrl: 'https://api.github.com',
+function getGitLabClient(token) {
+  const client = new Gitlab({
+    token,
   });
+
   return client;
 }
 
@@ -52,10 +52,10 @@ async function prepareTestGitLabRepo() {
     .substring(2);
   const testRepoName = `${repo}-${Date.now()}-${postfix}`;
 
-  const client = getGitHubClient(token);
+  const client = getGitLabClient(token);
 
   console.log('Creating repository', testRepoName);
-  await client.repos.createForAuthenticatedUser({
+  await client.Projects.create({
     name: testRepoName,
   });
 
@@ -63,7 +63,7 @@ async function prepareTestGitLabRepo() {
   await fs.remove(tempDir);
   let git = simpleGit().env({ ...process.env, GIT_SSH_COMMAND, GIT_SSL_NO_VERIFY });
 
-  const repoUrl = `git@github.com:${owner}/${repo}.git`;
+  const repoUrl = `git@gitlab.com:${owner}/${repo}.git`;
 
   console.log('Cloning repository', repoUrl);
   await git.clone(repoUrl, tempDir);
@@ -72,19 +72,16 @@ async function prepareTestGitLabRepo() {
   console.log('Pushing to new repository', testRepoName);
 
   await git.removeRemote('origin');
-  await git.addRemote(
-    'origin',
-    `https://${token}:x-oauth-basic@github.com/${owner}/${testRepoName}`,
-  );
+  await git.addRemote('origin', `https://oauth2:${token}@gitlab.com/${owner}/${testRepoName}`);
   await git.push(['-u', 'origin', 'master']);
 
   return { owner, repo: testRepoName, tempDir };
 }
 
 async function getAuthenticatedUser(token) {
-  const client = getGitHubClient(token);
-  const { data: user } = await client.users.getAuthenticated();
-  return { ...user, token, backendName: 'github' };
+  const client = getGitLabClient(token);
+  const user = await client.Users.current();
+  return { ...user, token, backendName: 'gitlab' };
 }
 
 async function getUser() {
@@ -104,51 +101,12 @@ async function deleteRepositories({ owner, repo, tempDir }) {
   console.log('Deleting repository', `${owner}/${repo}`);
   await fs.remove(tempDir);
 
-  let client = getGitHubClient(token);
-  await client.repos
-    .delete({
-      owner,
-      repo,
-    })
-    .catch(errorHandler);
+  let client = getGitLabClient(token);
+  await client.Projects.remove(`${owner}/${repo}`).catch(errorHandler);
 }
 
 async function resetOriginRepo({ owner, repo, tempDir }) {
-  console.log('Resetting origin repo:', `${owner}/repo`);
-  const { token } = getEnvs();
-  const client = getGitHubClient(token);
-
-  const { data: prs } = await client.pulls.list({
-    repo,
-    owner,
-    state: 'open',
-  });
-  const numbers = prs.map(pr => pr.number);
-  console.log('Closing prs:', numbers);
-  await Promise.all(
-    numbers.map(pull_number =>
-      client.pulls.update({
-        owner,
-        repo,
-        pull_number,
-      }),
-    ),
-  );
-
-  const { data: branches } = await client.repos.listBranches({ owner, repo });
-  const refs = branches.filter(b => b.name !== 'master').map(b => `heads/${b.name}`);
-
-  console.log('Deleting refs', refs);
-  await Promise.all(
-    refs.map(ref =>
-      client.git.deleteRef({
-        owner,
-        repo,
-        ref,
-      }),
-    ),
-  );
-
+  console.log('Resetting origin repo:', `${owner}/${repo}`);
   console.log('Resetting master');
   const git = simpleGit(tempDir).env({ ...process.env, GIT_SSH_COMMAND, GIT_SSL_NO_VERIFY });
   await git.push(['--force', 'origin', 'master']);
@@ -215,7 +173,10 @@ const sanitizeString = (str, { owner, repo, token, ownerName }) => {
     .replace(new RegExp(escapeRegExp(owner), 'g'), GITLAB_REPO_OWNER_SANITIZED_VALUE)
     .replace(new RegExp(escapeRegExp(repo), 'g'), GITLAB_REPO_NAME_SANITIZED_VALUE)
     .replace(new RegExp(escapeRegExp(token), 'g'), GITLAB_REPO_TOKEN_SANITIZED_VALUE)
-    .replace(new RegExp('https://avatars.+?/u/.+?v=\\d', 'g'), `${FAKE_OWNER_USER.avatar_url}`);
+    .replace(
+      new RegExp('https://secure.gravatar.+?/u/.+?v=\\d', 'g'),
+      `${FAKE_OWNER_USER.avatar_url}`,
+    );
 
   if (ownerName) {
     replaced = replaced.replace(new RegExp(escapeRegExp(ownerName), 'g'), FAKE_OWNER_USER.name);
@@ -252,8 +213,8 @@ const transformRecordedData = (expectation, toSanitize) => {
     // replace recorded user with fake one
     if (
       responseBody &&
-      httpRequest.path === '/user' &&
-      httpRequest.headers.Host.includes('api.github.com')
+      httpRequest.path === '/api/v4/user' &&
+      httpRequest.headers.Host.includes('gitlab.com')
     ) {
       responseBody = JSON.stringify(FAKE_OWNER_USER);
     }
@@ -278,7 +239,7 @@ async function teardownGitLabTest(taskData) {
 
       console.log('Persisting recorded data for test:', path.basename(filename));
 
-      const { owner, token, forkOwner, forkToken } = getEnvs();
+      const { owner, token } = getEnvs();
 
       const expectations = await retrieveRecordedExpectations();
 
@@ -286,10 +247,7 @@ async function teardownGitLabTest(taskData) {
         owner,
         repo: taskData.repo,
         token,
-        forkOwner,
-        forkToken,
         ownerName: taskData.user.name,
-        forkOwnerName: taskData.forkUser.name,
       };
       // transform the mock proxy recorded requests into Cypress route format
       const toPersist = expectations.map(expectation =>
