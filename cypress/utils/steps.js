@@ -157,22 +157,7 @@ function updateWorkflowStatusInEditor(newStatus) {
   assertNotification(notifications.updated);
 }
 
-function populateEntry(entry) {
-  const keys = Object.keys(entry);
-  for (let key of keys) {
-    const value = entry[key];
-    if (key === 'body') {
-      cy.get('[data-slate-editor]')
-        .click()
-        .clear()
-        .type(value);
-    } else {
-      cy.get(`[id^="${key}-field"]`)
-        .clear()
-        .type(value);
-    }
-  }
-
+function saveEntry() {
   cy.clock().then(clock => {
     // some input fields are de-bounced thus require advancing the clock
     if (clock) {
@@ -191,13 +176,60 @@ function populateEntry(entry) {
   });
 }
 
+function publishEntry() {
+  cy.clock().then(clock => {
+    // some input fields are de-bounced thus require advancing the clock
+    if (clock) {
+      // https://github.com/cypress-io/cypress/issues/1273
+      clock.tick(150);
+      clock.tick(150);
+      // eslint-disable-next-line cypress/no-unnecessary-waiting
+      cy.wait(500);
+    }
+
+    cy.contains('[role="button"]', 'Publish').as('publishButton');
+    cy.get('@publishButton')
+      .parent()
+      .within(() => {
+        cy.get('@publishButton').click();
+        cy.contains('[role="menuitem"] span', 'Publish now').click();
+      });
+    assertNotification(notifications.saved);
+  });
+}
+
+function populateEntry(entry) {
+  const keys = Object.keys(entry);
+  for (let key of keys) {
+    const value = entry[key];
+    if (key === 'body') {
+      cy.get('[data-slate-editor]')
+        .click()
+        .clear()
+        .type(value);
+    } else {
+      cy.get(`[id^="${key}-field"]`)
+        .clear()
+        .type(value);
+    }
+  }
+}
+
 function createPost(entry) {
   cy.contains('a', 'New Post').click();
   populateEntry(entry);
+  saveEntry();
 }
 
 function createPostAndExit(entry) {
   createPost(entry);
+  exitEditor();
+}
+
+function createPostAndPublish(entry) {
+  cy.contains('a', 'New Post').click();
+  populateEntry(entry);
+  publishEntry();
   exitEditor();
 }
 
@@ -207,6 +239,7 @@ function updateExistingPostAndExit(fromEntry, toEntry) {
     .parent()
     .click({ force: true });
   populateEntry(toEntry);
+  saveEntry();
   exitEditor();
   goToWorkflow();
   cy.contains('h2', toEntry.title);
@@ -321,4 +354,5 @@ module.exports = {
   validateNestedObjectFieldsAndExit,
   validateListFieldsAndExit,
   unpublishEntry,
+  createPostAndPublish,
 };

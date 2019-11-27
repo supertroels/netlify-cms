@@ -1,7 +1,6 @@
 import * as specUtils from './utils/spec_utils';
-import { login, createPostAndExit, assertNotification, assertPublishedEntry } from '../utils/steps';
+import { login, createPostAndPublish, assertPublishedEntry } from '../utils/steps';
 import { entry1 } from './gitlab/entries';
-const { notifications } = require('../utils/constants');
 
 const backend = 'gitlab';
 
@@ -29,9 +28,8 @@ describe('GitLab Backend Non Editorial Workflow', () => {
   });
 
   it('can create an entry', () => {
-    login();
-    createPostAndExit(entry1);
-    assertNotification(notifications.published);
+    login(taskResult.data.user);
+    createPostAndPublish(entry1);
     assertPublishedEntry(entry1);
   });
 });

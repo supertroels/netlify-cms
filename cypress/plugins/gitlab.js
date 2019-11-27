@@ -75,6 +75,8 @@ async function prepareTestGitLabRepo() {
   await git.addRemote('origin', `https://oauth2:${token}@gitlab.com/${owner}/${testRepoName}`);
   await git.push(['-u', 'origin', 'master']);
 
+  await client.ProtectedBranches.unprotect(`${owner}/${testRepoName}`, 'master');
+
   return { owner, repo: testRepoName, tempDir };
 }
 
